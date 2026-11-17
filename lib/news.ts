@@ -75,7 +75,7 @@ ${JSON.stringify(newItemsRaw.map((it, idx) => ({ index: idx, title: it.title }))
 ]
 `;
       const res = await ai.models.generateContent({
-        model: "gemini-3.5-flash-lite",
+        model: "gemini-3.1-flash-lite",
         contents: prompt,
       });
 
