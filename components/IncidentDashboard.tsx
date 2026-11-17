@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { IncidentItem } from "@/lib/news";
+import IncidentCalendar from "./IncidentCalendar";
 
 interface Props {
   initialItems: IncidentItem[];
@@ -11,6 +12,10 @@ interface Props {
 export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSeverity, setSelectedSeverity] = useState<string>("ALL");
+  const [selectedOrigin, setSelectedOrigin] = useState<string>("ALL");
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [currentMonth, setCurrentMonth] = useState<"2026-10" | "2026-11">("2026-11");
+  const [showCalendar, setShowCalendar] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // 検索とフィルター処理
@@ -19,30 +24,40 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
       const matchesSearch =
         searchQuery === "" ||
         item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        item.sourceCompany?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.affectedCompany?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.targetSystem?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.summary.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.impact.toLowerCase().includes(searchQuery.toLowerCase());
 
       const matchesSeverity =
         selectedSeverity === "ALL" || item.severity === selectedSeverity;
 
-      return matchesSearch && matchesSeverity;
+      const matchesOrigin =
+        selectedOrigin === "ALL" || item.incidentOrigin === selectedOrigin;
+
+      const matchesDate =
+        selectedDate === null || item.pubDate === selectedDate;
+
+      return matchesSearch && matchesSeverity && matchesOrigin && matchesDate;
     });
-  }, [initialItems, searchQuery, selectedSeverity]);
+  }, [initialItems, searchQuery, selectedSeverity, selectedOrigin, selectedDate]);
 
   // 統計情報
   const stats = useMemo(() => {
     const total = initialItems.length;
     const highCount = initialItems.filter((i) => i.severity === "HIGH").length;
-    const mediumCount = initialItems.filter((i) => i.severity === "MEDIUM").length;
-    return { total, highCount, mediumCount };
+    const saasOriginCount = initialItems.filter((i) => i.incidentOrigin.includes("SaaS") || i.incidentOrigin.includes("委託先")).length;
+    return { total, highCount, saasOriginCount };
   }, [initialItems]);
 
   // Slack / テキスト共有用コピー
   const handleCopy = (item: IncidentItem) => {
-    const text = `【⚠️セキュリティ速報】${item.sourceCompany || "公式発表"}
-タイトル: ${item.title}
+    const text = `【⚠️セキュリティ速報】
+🏢 公表企業: ${item.affectedCompany}
+⚡ 侵害元SaaS・システム: ${item.targetSystem} (${item.incidentOrigin})
+📅 公表日: ${item.dateDisplay}
 深刻度: ${item.severity} (${item.category})
+タイトル: ${item.title}
 概要: ${item.summary}
 影響範囲: ${item.impact}
 推奨対応: ${item.action}
@@ -55,7 +70,7 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
 
   // X (Twitter) でシェア
   const handleShareX = (item: IncidentItem) => {
-    const shareText = `【セキュリティ速報】${item.sourceCompany}：${item.title.slice(0, 50)}...\n深刻度: ${item.severity}\n`;
+    const shareText = `【セキュリティ速報】${item.affectedCompany}（${item.targetSystem}関連）\n深刻度: ${item.severity} / ${item.category}\n`;
     const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(item.link)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
@@ -63,27 +78,63 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
   return (
     <div>
       {/* 統計ミニカウンターバー */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 backdrop-blur-sm">
-          <span className="text-slate-400 text-xs block mb-1">直近検知インシデント</span>
+          <span className="text-slate-400 text-xs block mb-1">10/1以降の収集件数</span>
           <span className="text-2xl font-bold text-white">{stats.total} <span className="text-xs text-slate-500 font-normal">件</span></span>
         </div>
         <div className="bg-rose-950/30 border border-rose-900/40 rounded-xl p-3.5 backdrop-blur-sm">
           <span className="text-rose-400 text-xs block mb-1">要警戒（HIGH）</span>
           <span className="text-2xl font-bold text-rose-400">{stats.highCount} <span className="text-xs text-rose-500/70 font-normal">件</span></span>
         </div>
-        <div className="bg-amber-950/30 border border-amber-900/40 rounded-xl p-3.5 backdrop-blur-sm">
-          <span className="text-amber-400 text-xs block mb-1">注意（MEDIUM）</span>
-          <span className="text-2xl font-bold text-amber-400">{stats.mediumCount} <span className="text-xs text-amber-500/70 font-normal">件</span></span>
+        <div className="bg-cyan-950/30 border border-cyan-900/40 rounded-xl p-3.5 backdrop-blur-sm">
+          <span className="text-cyan-400 text-xs block mb-1">SaaS・委託先経由</span>
+          <span className="text-2xl font-bold text-cyan-400">{stats.saasOriginCount} <span className="text-xs text-cyan-500/70 font-normal">件</span></span>
         </div>
         <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 backdrop-blur-sm">
-          <span className="text-slate-400 text-xs block mb-1">更新サイクル</span>
+          <span className="text-slate-400 text-xs block mb-1">自動更新サイクル</span>
           <span className="text-lg font-bold text-emerald-400 flex items-center gap-1.5 mt-0.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             3時間毎
           </span>
         </div>
       </div>
+
+      {/* カレンダートグルボタン */}
+      <div className="flex justify-between items-center mb-3">
+        <button
+          onClick={() => setShowCalendar(!showCalendar)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white hover:border-slate-700 transition-all"
+        >
+          <span>📅</span>
+          <span>{showCalendar ? "カレンダーを閉じる" : "カレンダーを表示（10月1日〜の日毎集計）"}</span>
+          <span className="text-[10px] text-slate-500">{showCalendar ? "▲" : "▼"}</span>
+        </button>
+
+        {selectedDate && (
+          <span className="text-xs text-rose-400 font-semibold flex items-center gap-1">
+            <span>絞り込み中:</span>
+            <span className="underline">{selectedDate}</span>
+            <button
+              onClick={() => setSelectedDate(null)}
+              className="ml-1 text-slate-400 hover:text-white"
+            >
+              (解除)
+            </button>
+          </span>
+        )}
+      </div>
+
+      {/* カレンダーUI */}
+      {showCalendar && (
+        <IncidentCalendar
+          items={initialItems}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
+          currentMonth={currentMonth}
+          onMonthChange={setCurrentMonth}
+        />
+      )}
 
       {/* 検索 ＆ 絞り込みコントロールバー */}
       <div className="bg-slate-900/80 border border-slate-800/90 rounded-2xl p-4 sm:p-5 mb-8 backdrop-blur-md shadow-lg space-y-4">
@@ -96,7 +147,7 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="企業名、キーワードで検索（例: スノーピーク、KARTE、クレカ、漏洩など）..."
+            placeholder="企業名、SaaS/システム名、キーワードで検索（例: KARTE、スノーピーク、クレカ、Gyazoなど）..."
             className="w-full pl-10 pr-4 py-2.5 bg-slate-950/80 border border-slate-700/80 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-all"
           />
           {searchQuery && (
@@ -109,32 +160,56 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
           )}
         </div>
 
-        {/* 深刻度フィルタータブ */}
+        {/* フィルタータブ群 */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/70">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-            <span className="text-xs text-slate-400 mr-1 hidden sm:inline">深刻度:</span>
-            {[
-              { id: "ALL", label: `すべて (${initialItems.length})` },
-              { id: "HIGH", label: `HIGH (${stats.highCount})` },
-              { id: "MEDIUM", label: `MEDIUM (${stats.mediumCount})` },
-              { id: "LOW", label: "LOW" },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setSelectedSeverity(tab.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 ${
-                  selectedSeverity === tab.id
-                    ? tab.id === "HIGH"
-                      ? "bg-rose-500 text-white shadow-lg shadow-rose-500/20"
-                      : tab.id === "MEDIUM"
-                      ? "bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20"
-                      : "bg-white text-slate-950"
-                    : "bg-slate-800/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 深刻度 */}
+            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800/80 text-xs">
+              <span className="text-[11px] text-slate-400 px-1">深刻度:</span>
+              {["ALL", "HIGH", "MEDIUM"].map((lvl) => (
+                <button
+                  key={lvl}
+                  onClick={() => setSelectedSeverity(lvl)}
+                  className={`px-2 py-0.5 rounded font-semibold transition-all ${
+                    selectedSeverity === lvl
+                      ? lvl === "HIGH"
+                        ? "bg-rose-600 text-white"
+                        : lvl === "MEDIUM"
+                        ? "bg-amber-500 text-slate-950"
+                        : "bg-slate-700 text-white"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {lvl}
+                </button>
+              ))}
+            </div>
+
+            {/* 発生元種別（SaaS・委託先 vs 自社直接） */}
+            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800/80 text-xs">
+              <span className="text-[11px] text-slate-400 px-1">侵害経路:</span>
+              {[
+                { id: "ALL", label: "すべて" },
+                { id: "SaaS・委託先侵害", label: "SaaS/委託先" },
+                { id: "自社システム侵害", label: "自社直接" },
+              ].map((origin) => (
+                <button
+                  key={origin.id}
+                  onClick={() => setSelectedOrigin(origin.id)}
+                  className={`px-2 py-0.5 rounded font-semibold transition-all ${
+                    selectedOrigin === origin.id
+                      ? origin.id.includes("SaaS")
+                        ? "bg-cyan-600 text-white"
+                        : origin.id.includes("自社")
+                        ? "bg-indigo-600 text-white"
+                        : "bg-slate-700 text-white"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {origin.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="text-xs text-slate-400 font-mono">
@@ -143,12 +218,12 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
         </div>
       </div>
 
-      {/* インシデントリスト */}
+      {/* インシデント一覧 */}
       <div className="space-y-5">
         {filteredItems.length === 0 ? (
           <div className="text-center py-16 bg-slate-900/40 rounded-2xl border border-dashed border-slate-800 text-slate-400">
             <p className="text-base font-semibold mb-1">条件に一致するインシデントは見つかりませんでした</p>
-            <p className="text-xs text-slate-500">検索ワードを変更するか、深刻度フィルターを「すべて」に戻してください</p>
+            <p className="text-xs text-slate-500">カレンダーの日付や検索ワードのフィルターを解除してお試しください</p>
           </div>
         ) : (
           filteredItems.map((item) => (
@@ -156,15 +231,38 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
               key={item.id}
               className="group relative rounded-2xl bg-slate-900/90 border border-slate-800 hover:border-slate-700/80 p-5 sm:p-6 transition-all duration-200 hover:shadow-xl backdrop-blur-md"
             >
-              {/* ヘッダー情報（企業、カテゴリ、深刻度、公表日） */}
-              <div className="flex flex-wrap items-center justify-between gap-2.5 mb-3">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="px-3 py-1 rounded-md bg-slate-800 text-white font-bold text-xs border border-slate-700/80">
-                    🏢 {item.sourceCompany}
+              {/* 【重要改善】公表企業 と 侵害元SaaS・システム の明確な分離表示エリア */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3.5 pb-3 border-b border-slate-800/70">
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* ① 被害・公表企業 */}
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/10 border border-white/20 text-white font-bold text-xs">
+                    <span className="text-slate-400 text-[10px] font-normal uppercase">公表企業</span>
+                    <span>🏢 {item.affectedCompany}</span>
+                  </div>
+
+                  {/* 矢印 */}
+                  <span className="text-slate-600 text-xs">←</span>
+
+                  {/* ② 侵害元SaaS・システム */}
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-950/50 border border-cyan-800/60 text-cyan-300 font-bold text-xs">
+                    <span className="text-cyan-500/70 text-[10px] font-normal uppercase">侵害対象</span>
+                    <span>⚡ {item.targetSystem}</span>
+                  </div>
+
+                  {/* ③ 経路種別バッジ */}
+                  <span
+                    className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                      item.incidentOrigin.includes("SaaS") || item.incidentOrigin.includes("委託先")
+                        ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                        : "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+                    }`}
+                  >
+                    {item.incidentOrigin}
                   </span>
-                  <span className="px-2.5 py-0.5 rounded bg-slate-800/80 text-slate-300 text-xs">
-                    {item.category}
-                  </span>
+                </div>
+
+                {/* 深刻度 & 日付 */}
+                <div className="flex items-center gap-2">
                   <span
                     className={`px-2.5 py-0.5 rounded-full text-xs font-bold tracking-wide ${
                       item.severity === "HIGH"
@@ -176,15 +274,14 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
                   >
                     深刻度: {item.severity}
                   </span>
+                  <span className="font-mono text-xs text-slate-400">
+                    {item.dateDisplay}
+                  </span>
                 </div>
-
-                <span className="font-mono text-xs text-slate-400">
-                  {item.pubDate ? new Date(item.pubDate).toLocaleDateString("ja-JP") : ""}
-                </span>
               </div>
 
               {/* 発表タイトル */}
-              <h2 className="text-base sm:text-lg font-bold text-white group-hover:text-rose-400 transition-colors mb-3.5 leading-snug">
+              <h2 className="text-base sm:text-lg font-bold text-white group-hover:text-rose-400 transition-colors mb-3 leading-snug">
                 <a href={item.link} target="_blank" rel="noopener noreferrer">
                   {item.title}
                 </a>
@@ -218,8 +315,8 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
                 </div>
               </div>
 
-              {/* フッターアクションバー（Slack共有コピー・X共有・一次ソースリンク） */}
-              <div className="pt-2 flex flex-wrap items-center justify-between gap-3 text-xs">
+              {/* フッターアクションバー */}
+              <div className="pt-1 flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleCopy(item)}
