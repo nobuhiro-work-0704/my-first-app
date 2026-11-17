@@ -12,6 +12,11 @@ export interface IncidentItem {
   affectedCompany: string; // 被害・公表企業（例: ワールド、CAMPFIRE、スノーピーク）
   targetSystem: string; // 侵害・影響を受けたSaaSやシステム名（例: KARTE、社内ファイルサーバー）
   incidentOrigin: "SaaS・委託先侵害" | "自社システム侵害" | "その他";
+
+  // 攻撃の種類と悪用された脆弱性詳細
+  attackType: "アカウント乗っ取り" | "脆弱性悪用" | "フィッシング" | "設定不備・内部要因" | "調査中・その他";
+  vulnerabilityDetails?: string | null; // 悪用された脆弱性の詳細
+
   category: "不正アクセス" | "情報漏洩" | "脆弱性/注意喚起" | "ランサムウェア" | "その他";
   severity: "HIGH" | "MEDIUM" | "LOW";
   summary: string;
@@ -43,7 +48,6 @@ const RECENT_RSS_URL = encodeURI(
 export async function getCuratedIncidents(): Promise<{ items: IncidentItem[]; updatedAt: string }> {
   const baseItems = getStoredIncidents();
 
-  // 最新の差分を取得（必要に応じてGeminiで補完）
   try {
     const feed = await parser.parseURL(RECENT_RSS_URL);
     const recent = (feed.items || []).slice(0, 5);
@@ -54,7 +58,17 @@ export async function getCuratedIncidents(): Promise<{ items: IncidentItem[]; up
     if (newItemsRaw.length > 0 && process.env.GEMINI_API_KEY) {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const prompt = `
-以下のインシデントについて、利用企業名、侵害対象SaaS/システム名、種別（SaaS・委託先侵害/自社システム侵害）、深刻度(HIGH/MEDIUM/LOW)、要約、影響範囲、推奨対応をJSON配列で出力してください。
+以下のインシデントについて、利用企業名、侵害対象SaaS/システム名、種別（SaaS・委託先侵害/自社システム侵害）、攻撃手法(attackType)、悪用された脆弱性(vulnerabilityDetails)、深刻度(severity)、要約、影響範囲、推奨対応をJSON配列で出力してください。
+
+【攻撃手法(attackType)】:
+- アカウント乗っ取り
+- 脆弱性悪用
+- フィッシング
+- 設定不備・内部要因
+- 調査中・その他
+
+【脆弱性詳細(vulnerabilityDetails)】:
+- attackTypeが「脆弱性悪用」の場合、判明している脆弱性名やタイプ（例: "VPN機器の脆弱性", "SQLインジェクション" 等）を記入。ない場合は null。
 
 入力:
 ${JSON.stringify(newItemsRaw.map((it, idx) => ({ index: idx, title: it.title })))}
@@ -66,6 +80,8 @@ ${JSON.stringify(newItemsRaw.map((it, idx) => ({ index: idx, title: it.title }))
     "affectedCompany": "企業名",
     "targetSystem": "SaaSまたはシステム名",
     "incidentOrigin": "SaaS・委託先侵害 | 自社システム侵害",
+    "attackType": "アカウント乗っ取り | 脆弱性悪用 | フィッシング | 設定不備・内部要因 | 調査中・その他",
+    "vulnerabilityDetails": "具体的な脆弱性名 または null",
     "category": "不正アクセス | 情報漏洩 | その他",
     "severity": "HIGH | MEDIUM | LOW",
     "summary": "要約文",
@@ -100,6 +116,8 @@ ${JSON.stringify(newItemsRaw.map((it, idx) => ({ index: idx, title: it.title }))
           affectedCompany: d?.affectedCompany || "各社公式発表",
           targetSystem: d?.targetSystem || "関連システム",
           incidentOrigin: d?.incidentOrigin || "SaaS・委託先侵害",
+          attackType: d?.attackType || "調査中・その他",
+          vulnerabilityDetails: d?.vulnerabilityDetails || null,
           category: d?.category || "不正アクセス",
           severity: d?.severity || "HIGH",
           summary: d?.summary || "公式発表をご確認ください。",

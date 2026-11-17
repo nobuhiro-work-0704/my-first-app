@@ -13,6 +13,7 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSeverity, setSelectedSeverity] = useState<string>("ALL");
   const [selectedOrigin, setSelectedOrigin] = useState<string>("ALL");
+  const [selectedAttackType, setSelectedAttackType] = useState<string>("ALL");
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [currentMonth, setCurrentMonth] = useState<"2026-10" | "2026-11">("2026-11");
   const [showCalendar, setShowCalendar] = useState(true);
@@ -26,6 +27,7 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
         item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.affectedCompany?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.targetSystem?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (item.vulnerabilityDetails && item.vulnerabilityDetails.toLowerCase().includes(searchQuery.toLowerCase())) ||
         item.summary.toLowerCase().includes(searchQuery.toLowerCase()) ||
         item.impact.toLowerCase().includes(searchQuery.toLowerCase());
 
@@ -35,19 +37,23 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
       const matchesOrigin =
         selectedOrigin === "ALL" || item.incidentOrigin === selectedOrigin;
 
+      const matchesAttackType =
+        selectedAttackType === "ALL" || item.attackType === selectedAttackType;
+
       const matchesDate =
         selectedDate === null || item.pubDate === selectedDate;
 
-      return matchesSearch && matchesSeverity && matchesOrigin && matchesDate;
+      return matchesSearch && matchesSeverity && matchesOrigin && matchesAttackType && matchesDate;
     });
-  }, [initialItems, searchQuery, selectedSeverity, selectedOrigin, selectedDate]);
+  }, [initialItems, searchQuery, selectedSeverity, selectedOrigin, selectedAttackType, selectedDate]);
 
   // 統計情報
   const stats = useMemo(() => {
     const total = initialItems.length;
-    const highCount = initialItems.filter((i) => i.severity === "HIGH").length;
+    const vulnExploitCount = initialItems.filter((i) => i.attackType === "脆弱性悪用").length;
+    const takeoverCount = initialItems.filter((i) => i.attackType === "アカウント乗っ取り").length;
     const saasOriginCount = initialItems.filter((i) => i.incidentOrigin.includes("SaaS") || i.incidentOrigin.includes("委託先")).length;
-    return { total, highCount, saasOriginCount };
+    return { total, vulnExploitCount, takeoverCount, saasOriginCount };
   }, [initialItems]);
 
   // Slack / テキスト共有用コピー
@@ -55,6 +61,7 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
     const text = `【⚠️セキュリティ速報】
 🏢 公表企業: ${item.affectedCompany}
 ⚡ 侵害元SaaS・システム: ${item.targetSystem} (${item.incidentOrigin})
+🎯 攻撃手法: ${item.attackType}${item.vulnerabilityDetails ? `\n🔍 悪用脆弱性: ${item.vulnerabilityDetails}` : ""}
 📅 公表日: ${item.dateDisplay}
 深刻度: ${item.severity} (${item.category})
 タイトル: ${item.title}
@@ -70,7 +77,7 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
 
   // X (Twitter) でシェア
   const handleShareX = (item: IncidentItem) => {
-    const shareText = `【セキュリティ速報】${item.affectedCompany}（${item.targetSystem}関連）\n深刻度: ${item.severity} / ${item.category}\n`;
+    const shareText = `【セキュリティ速報】${item.affectedCompany}（${item.targetSystem}）\n手法: ${item.attackType}${item.vulnerabilityDetails ? ` / 脆弱性: ${item.vulnerabilityDetails}` : ""}\n`;
     const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(item.link)}`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
@@ -80,23 +87,20 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
       {/* 統計ミニカウンターバー */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 backdrop-blur-sm">
-          <span className="text-slate-400 text-xs block mb-1">10/1以降の収集件数</span>
+          <span className="text-slate-400 text-xs block mb-1">10/1以降の一次発表</span>
           <span className="text-2xl font-bold text-white">{stats.total} <span className="text-xs text-slate-500 font-normal">件</span></span>
         </div>
-        <div className="bg-rose-950/30 border border-rose-900/40 rounded-xl p-3.5 backdrop-blur-sm">
-          <span className="text-rose-400 text-xs block mb-1">要警戒（HIGH）</span>
-          <span className="text-2xl font-bold text-rose-400">{stats.highCount} <span className="text-xs text-rose-500/70 font-normal">件</span></span>
+        <div className="bg-purple-950/30 border border-purple-900/40 rounded-xl p-3.5 backdrop-blur-sm">
+          <span className="text-purple-400 text-xs block mb-1">⚡ 脆弱性悪用</span>
+          <span className="text-2xl font-bold text-purple-400">{stats.vulnExploitCount} <span className="text-xs text-purple-500/70 font-normal">件</span></span>
+        </div>
+        <div className="bg-amber-950/30 border border-amber-900/40 rounded-xl p-3.5 backdrop-blur-sm">
+          <span className="text-amber-400 text-xs block mb-1">🔑 アカウント乗っ取り</span>
+          <span className="text-2xl font-bold text-amber-400">{stats.takeoverCount} <span className="text-xs text-amber-500/70 font-normal">件</span></span>
         </div>
         <div className="bg-cyan-950/30 border border-cyan-900/40 rounded-xl p-3.5 backdrop-blur-sm">
           <span className="text-cyan-400 text-xs block mb-1">SaaS・委託先経由</span>
           <span className="text-2xl font-bold text-cyan-400">{stats.saasOriginCount} <span className="text-xs text-cyan-500/70 font-normal">件</span></span>
-        </div>
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 backdrop-blur-sm">
-          <span className="text-slate-400 text-xs block mb-1">自動更新サイクル</span>
-          <span className="text-lg font-bold text-emerald-400 flex items-center gap-1.5 mt-0.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            3時間毎
-          </span>
         </div>
       </div>
 
@@ -147,7 +151,7 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="企業名、SaaS/システム名、キーワードで検索（例: KARTE、スノーピーク、クレカ、Gyazoなど）..."
+            placeholder="企業名、SaaS名、脆弱性名、キーワードで検索（例: VPN、KARTE、スノーピーク、クレカ等）..."
             className="w-full pl-10 pr-4 py-2.5 bg-slate-950/80 border border-slate-700/80 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-all"
           />
           {searchQuery && (
@@ -161,59 +165,89 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
         </div>
 
         {/* フィルタータブ群 */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/70">
-          <div className="flex flex-wrap items-center gap-2">
-            {/* 深刻度 */}
-            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800/80 text-xs">
-              <span className="text-[11px] text-slate-400 px-1">深刻度:</span>
-              {["ALL", "HIGH", "MEDIUM"].map((lvl) => (
-                <button
-                  key={lvl}
-                  onClick={() => setSelectedSeverity(lvl)}
-                  className={`px-2 py-0.5 rounded font-semibold transition-all ${
-                    selectedSeverity === lvl
-                      ? lvl === "HIGH"
-                        ? "bg-rose-600 text-white"
-                        : lvl === "MEDIUM"
-                        ? "bg-amber-500 text-slate-950"
-                        : "bg-slate-700 text-white"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  {lvl}
-                </button>
-              ))}
-            </div>
-
-            {/* 発生元種別（SaaS・委託先 vs 自社直接） */}
-            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800/80 text-xs">
-              <span className="text-[11px] text-slate-400 px-1">侵害経路:</span>
-              {[
-                { id: "ALL", label: "すべて" },
-                { id: "SaaS・委託先侵害", label: "SaaS/委託先" },
-                { id: "自社システム侵害", label: "自社直接" },
-              ].map((origin) => (
-                <button
-                  key={origin.id}
-                  onClick={() => setSelectedOrigin(origin.id)}
-                  className={`px-2 py-0.5 rounded font-semibold transition-all ${
-                    selectedOrigin === origin.id
-                      ? origin.id.includes("SaaS")
-                        ? "bg-cyan-600 text-white"
-                        : origin.id.includes("自社")
-                        ? "bg-indigo-600 text-white"
-                        : "bg-slate-700 text-white"
-                      : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  {origin.label}
-                </button>
-              ))}
-            </div>
+        <div className="space-y-2.5 pt-2 border-t border-slate-800/70">
+          {/* 攻撃手法別フィルター（今回の目玉！） */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-slate-400 font-semibold mr-1">🎯 攻撃手法:</span>
+            {[
+              { id: "ALL", label: `すべて (${initialItems.length})` },
+              { id: "脆弱性悪用", label: `⚡ 脆弱性悪用 (${stats.vulnExploitCount})` },
+              { id: "アカウント乗っ取り", label: `🔑 アカウント乗っ取り (${stats.takeoverCount})` },
+              { id: "調査中・その他", label: "調査中・その他" },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setSelectedAttackType(tab.id)}
+                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${
+                  selectedAttackType === tab.id
+                    ? tab.id === "脆弱性悪用"
+                      ? "bg-purple-600 text-white shadow-md shadow-purple-600/30"
+                      : tab.id === "アカウント乗っ取り"
+                      ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30"
+                      : "bg-white text-slate-950"
+                    : "bg-slate-950/80 text-slate-400 hover:text-white border border-slate-800"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
-          <div className="text-xs text-slate-400 font-mono">
-            表示中: <span className="font-bold text-white">{filteredItems.length}</span> 件
+          {/* 深刻度 & 侵害経路フィルター */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* 深刻度 */}
+              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800/80 text-xs">
+                <span className="text-[11px] text-slate-400 px-1">深刻度:</span>
+                {["ALL", "HIGH", "MEDIUM"].map((lvl) => (
+                  <button
+                    key={lvl}
+                    onClick={() => setSelectedSeverity(lvl)}
+                    className={`px-2 py-0.5 rounded font-semibold transition-all ${
+                      selectedSeverity === lvl
+                        ? lvl === "HIGH"
+                          ? "bg-rose-600 text-white"
+                          : lvl === "MEDIUM"
+                          ? "bg-amber-500 text-slate-950"
+                          : "bg-slate-700 text-white"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    {lvl}
+                  </button>
+                ))}
+              </div>
+
+              {/* 侵害経路 */}
+              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800/80 text-xs">
+                <span className="text-[11px] text-slate-400 px-1">侵害経路:</span>
+                {[
+                  { id: "ALL", label: "すべて" },
+                  { id: "SaaS・委託先侵害", label: "SaaS/委託先" },
+                  { id: "自社システム侵害", label: "自社直接" },
+                ].map((origin) => (
+                  <button
+                    key={origin.id}
+                    onClick={() => setSelectedOrigin(origin.id)}
+                    className={`px-2 py-0.5 rounded font-semibold transition-all ${
+                      selectedOrigin === origin.id
+                        ? origin.id.includes("SaaS")
+                          ? "bg-cyan-600 text-white"
+                          : origin.id.includes("自社")
+                          ? "bg-indigo-600 text-white"
+                          : "bg-slate-700 text-white"
+                        : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    {origin.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="text-xs text-slate-400 font-mono">
+              表示中: <span className="font-bold text-white">{filteredItems.length}</span> 件
+            </div>
           </div>
         </div>
       </div>
@@ -223,7 +257,7 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
         {filteredItems.length === 0 ? (
           <div className="text-center py-16 bg-slate-900/40 rounded-2xl border border-dashed border-slate-800 text-slate-400">
             <p className="text-base font-semibold mb-1">条件に一致するインシデントは見つかりませんでした</p>
-            <p className="text-xs text-slate-500">カレンダーの日付や検索ワードのフィルターを解除してお試しください</p>
+            <p className="text-xs text-slate-500">攻撃手法タブや検索ワードのフィルターを解除してお試しください</p>
           </div>
         ) : (
           filteredItems.map((item) => (
@@ -231,8 +265,8 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
               key={item.id}
               className="group relative rounded-2xl bg-slate-900/90 border border-slate-800 hover:border-slate-700/80 p-5 sm:p-6 transition-all duration-200 hover:shadow-xl backdrop-blur-md"
             >
-              {/* 【重要改善】公表企業 と 侵害元SaaS・システム の明確な分離表示エリア */}
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-3.5 pb-3 border-b border-slate-800/70">
+              {/* ヘッダー情報（企業、SaaS、攻撃手法、深刻度） */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3 pb-3 border-b border-slate-800/70">
                 <div className="flex flex-wrap items-center gap-2">
                   {/* ① 被害・公表企業 */}
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/10 border border-white/20 text-white font-bold text-xs">
@@ -240,7 +274,6 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
                     <span>🏢 {item.affectedCompany}</span>
                   </div>
 
-                  {/* 矢印 */}
                   <span className="text-slate-600 text-xs">←</span>
 
                   {/* ② 侵害元SaaS・システム */}
@@ -249,15 +282,17 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
                     <span>⚡ {item.targetSystem}</span>
                   </div>
 
-                  {/* ③ 経路種別バッジ */}
+                  {/* ③ 攻撃手法バッジ */}
                   <span
-                    className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                      item.incidentOrigin.includes("SaaS") || item.incidentOrigin.includes("委託先")
-                        ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
-                        : "bg-indigo-500/20 text-indigo-300 border border-indigo-500/30"
+                    className={`px-2.5 py-0.5 rounded text-[11px] font-bold ${
+                      item.attackType === "脆弱性悪用"
+                        ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
+                        : item.attackType === "アカウント乗っ取り"
+                        ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                        : "bg-slate-800 text-slate-300 border border-slate-700"
                     }`}
                   >
-                    {item.incidentOrigin}
+                    🎯 {item.attackType}
                   </span>
                 </div>
 
@@ -286,6 +321,16 @@ export default function IncidentDashboard({ initialItems, updatedAt }: Props) {
                   {item.title}
                 </a>
               </h2>
+
+              {/* 【新設】悪用された脆弱性の詳細ボックス（特定されている場合） */}
+              {item.vulnerabilityDetails && (
+                <div className="mb-3.5 px-3.5 py-2.5 rounded-xl bg-purple-950/40 border border-purple-800/60 flex items-center gap-2 text-xs">
+                  <span className="text-purple-400 font-bold shrink-0">⚡ 悪用された脆弱性:</span>
+                  <span className="text-white font-mono font-bold bg-purple-900/40 px-2 py-0.5 rounded border border-purple-700/50">
+                    {item.vulnerabilityDetails}
+                  </span>
+                </div>
+              )}
 
               {/* AI要約 & 影響・対応カード */}
               <div className="rounded-xl bg-slate-950/70 border border-slate-800/80 p-4 space-y-2.5 mb-4">
